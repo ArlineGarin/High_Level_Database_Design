@@ -1,0 +1,164 @@
+###################
+## SQL Script
+###################
+
+/*
+What are customers' demographics? (age, gender, country)? 
+*/
+
+SELECT cust_gender AS "Customer Gender", cust_country AS "Customer Country", (YEAR(CURDATE()) - YEAR(cust_birth_date)) AS "CustomerAge",
+		count(customer_id) AS "Number of Customers"
+FROM customers
+GROUP BY cust_country, cust_gender, customerage
+ORDER BY cust_gender, cust_country ASC;
+
+/*
+What is the average purchase amount for one-time purchasers vs. subscribers?
+*/
+
+SELECT c.customer_type AS "Customer Type", round(AVG(total_amount),2) AS "Average Total Amount per Order"
+FROM orders AS o, customers AS c
+WHERE o.customer_id = c.customer_id
+GROUP BY c.customer_type;
+
+/*
+Which type of bars are most sold? 
+*/
+
+SELECT od.product_id AS "Product ID", p.product_category AS "Product Category", p.product_name AS "Product Name",
+	   SUM(od.order_quantity) AS "Number of Products Sold"
+FROM order_details AS od, products AS p
+WHERE od.product_id = p.product_id
+AND upper(p.product_category) NOT LIKE '%GIFT%'
+GROUP BY od.product_id
+ORDER BY SUM(od.order_quantity) desc;
+
+/*
+What is the most common point of reoder for customers? (OT vs. S)
+*/
+
+SELECT c.customer_id, c.customer_type AS "Customer Type", (DAY(max(o.order_date)) - DAY(o.order_date)) AS "Average Point of Reorder"
+FROM customers AS c, orders AS o
+WHERE c.customer_id = o.customer_id
+GROUP BY c.customer_id;
+
+
+/*
+Do our customers order several times from us? 
+*/
+
+SELECT c.customer_type AS "Customer Type", c.customer_id AS "Customer ID", 
+	   max(order_date) AS "Date of Last Order", count(order_no) AS "Number of orders"
+FROM customers AS c, orders AS o
+WHERE c.customer_id = o.customer_id
+GROUP BY c.customer_id
+ORDER BY c.customer_type, count(order_no) DESC;
+
+/*
+What is the total amount spent per customer? 
+*/
+
+SELECT c.customer_id AS "Customer ID", concat_ws(", ", c.cust_first_name, c.cust_last_name) AS "Customer Name", 
+	   SUM(o.total_amount) AS "Total Amount Spent"
+FROM customers AS c, orders AS o
+WHERE c.customer_id = o.customer_id
+GROUP BY c.customer_id
+ORDER BY SUM(o.total_amount) DESC;
+
+/*
+What is the top 3 of the promotions which generated the most revenues?
+*/
+
+SELECT pm.promotion_type AS "Channel", pm.promotion_title AS "Promotion Name", SUM(o.total_amount) AS "Total Amount (in $)"
+FROM promotions AS pm, orders AS o
+WHERE pm.promotion_id = o.promotion_id
+GROUP BY o.promotion_id
+ORDER BY SUM(o.total_amount) DESC
+LIMIT 3;
+
+/*
+Which social media channels work the best for our promotions and bring most orders?
+*/
+
+SELECT pm.promotion_type AS "Channel", COUNT(o.order_no) AS "Number of Orders With Promotion"
+FROM promotions AS pm, orders AS o
+WHERE pm.promotion_id = o.promotion_id
+AND o.promotion_id IS NOT NULL
+GROUP BY pm.promotion_type
+ORDER BY COUNT(o.order_no) DESC;
+
+/*
+Do customers buy significantly more with a promotion code? (quantity)
+*/
+
+SELECT pm.promotion_id AS "Promotion ID", pm.promotion_title AS "Promotion Title", SUM(od.order_quantity) AS "Quantity Sold"
+FROM promotions AS pm, orders AS o, order_details AS od
+WHERE pm.promotion_id = o.promotion_id
+AND o.order_no = od.order_no
+GROUP BY pm.promotion_title
+ORDER BY SUM(od.order_quantity) DESC;
+
+/*
+How many issues are reported through the support button? 
+*/
+
+SELECT count(issue_id) AS "Total Number of Issues Reported"
+FROM support;
+
+/*
+What is the response rate? How fast are the issues responded to? 
+*/
+
+SELECT e.employee_no AS "Employee Number", e.emp_first_name AS "Agent First Name", e.emp_last_name AS "Agent Last Name",
+	   round(AVG(s.date_closed-s.date_created),2) AS "Response rate in days"
+FROM support AS s, employees AS e
+WHERE s.employee_no = e.employee_no
+AND upper(e.emp_department) = "SUPPORT"
+GROUP BY e.employee_no;
+
+###################
+## SQL Procedures
+###################
+
+## Procedure 1 - More details on the Support Button 
+CREATE PROCEDURE `support_cust_yn_prc`(IN in_issue_no INT)
+BEGIN
+DECLARE v_count INT; SET v_count = 0;
+SELECT count(1) INTO v_count
+FROM support AS s
+LEFT JOIN customers AS c
+ON s.issue_email = c.cust_email WHERE issue_id = in_issue_no AND s.issue_email = c.cust_email;
+IF v_count > 0
+THEN UPDATE support
+SET customer_yn = "Yes" WHERE issue_id = in_issue_no;
+ELSE
+UPDATE support
+SET customer_yn = "No"
+WHERE issue_id = in_issue_no; END IF;
+END
+
+# Calling Procedure 1 
+CALL support_cust_yn_prc(6101);
+SELECT * FROM support;
+
+## Procedure 2 - Is the promise “3-day shipment” made?
+CREATE PROCEDURE `days_ship_yn`(IN in_order_no INT, OUT out_3day_ship_yn VARCHAR(30))
+BEGIN
+DECLARE v_check VARCHAR(3);
+SELECT CASE
+WHEN shipped_date is not null THEN DATEDIFF(shipped_date, order_date) WHEN shipped_date is null THEN DATEDIFF(curdate(), order_date)
+END
+INTO v_check
+FROM orders
+WHERE order_no = in_order_no;
+IF v_check <= 3
+THEN SET out_3day_ship_yn = "3 days or less";
+ELSE
+SET out_3day_ship_yn = "More than 3 days!";
+END IF; 
+END
+
+# Calling Procedure 2 for order ID 3
+CALL days_ship_yn(3, @out_no_days); 
+SELECT @out_no_days;
+
