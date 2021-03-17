@@ -1,4 +1,4 @@
-# High_Level_Database_Design
+# SQL_High_Level_Database_Design
 High Level Database Design document with SQL scripts
 
 Goal: Create a Database that will help the client store and report the data efficiently
